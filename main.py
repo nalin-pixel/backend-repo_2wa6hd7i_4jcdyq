@@ -1,6 +1,10 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import ValidationError
+
+from schemas import Contactlead
+from database import create_document, db
 
 app = FastAPI()
 
@@ -33,9 +37,6 @@ def test_database():
     }
     
     try:
-        # Try to import database module
-        from database import db
-        
         if db is not None:
             response["database"] = "✅ Available"
             response["database_url"] = "✅ Configured"
@@ -52,17 +53,28 @@ def test_database():
         else:
             response["database"] = "⚠️  Available but not initialized"
             
-    except ImportError:
-        response["database"] = "❌ Database module not found (run enable-database first)"
     except Exception as e:
         response["database"] = f"❌ Error: {str(e)[:50]}"
     
     # Check environment variables
-    import os
     response["database_url"] = "✅ Set" if os.getenv("DATABASE_URL") else "❌ Not Set"
     response["database_name"] = "✅ Set" if os.getenv("DATABASE_NAME") else "❌ Not Set"
     
     return response
+
+@app.post("/contact")
+async def create_contact(lead: Contactlead):
+    """Capture contact lead submissions from the portfolio form and persist to MongoDB."""
+    # Ensure database connection exists
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available. Please try again later.")
+    try:
+        inserted_id = create_document("contactlead", lead)
+        return {"status": "ok", "id": inserted_id}
+    except ValidationError as ve:
+        raise HTTPException(status_code=422, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to save your message. Please try again later.")
 
 
 if __name__ == "__main__":
